@@ -203,7 +203,7 @@ function renderLogin(message) {
           <div id="loginError" class="hidden badge badge-danger w-full !justify-center py-2"></div>
           <div>
             <label class="field-label">Username</label>
-            <input id="username" class="input mt-1" autocomplete="username" placeholder="e.g. agent1" />
+            <input id="username" class="input mt-1" autocomplete="username" placeholder="e.g. Nicco" />
           </div>
           <div>
             <label class="field-label">PIN</label>
