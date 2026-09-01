@@ -297,11 +297,31 @@ const kpis = [
   </div>`).join('')}
     </div>
 
-    <div class="card p-5 mb-6 fade-in">
+       <div class="card p-5 mb-6 fade-in">
       <h2 class="font-display font-semibold mb-4">Marketers overview</h2>
       <div class="table-wrap">
         <table class="data">
-          <thead><tr><th>Marketer</th><th>Schools</th><th>Enrolment</th><th>Bill</th><th>Collected</th><th>Balance</th></tr></thead>
+          <thead>
+            ${(() => {
+              const totals = summary.marketers.reduce((acc, m) => ({
+                schools: acc.schools + (Number(m.schools) || 0),
+                enrolment: acc.enrolment + (Number(m.enrolment) || 0),
+                bill: acc.bill + (Number(m.bill) || 0),
+                collected: acc.collected + (Number(m.collected) || 0),
+                balance: acc.balance + (Number(m.balance) || 0)
+              }), { schools: 0, enrolment: 0, bill: 0, collected: 0, balance: 0 });
+              return `
+              <tr style="color:var(--success); font-weight:700;">
+                <td>TOTAL</td>
+                <td class="tabular-nums">${totals.schools}</td>
+                <td class="tabular-nums">${totals.enrolment}</td>
+                <td class="tabular-nums">${fmt.money(totals.bill)}</td>
+                <td class="tabular-nums">${fmt.money(totals.collected)}</td>
+                <td class="tabular-nums">${fmt.money(totals.balance)}</td>
+              </tr>`;
+            })()}
+            <tr><th>Marketer</th><th>Schools</th><th>Enrolment</th><th>Bill</th><th>Collected</th><th>Balance</th></tr>
+          </thead>
           <tbody>
             ${summary.marketers.map(m => `
               <tr>
@@ -786,20 +806,23 @@ async function loadRecent() {
       Api.getPaymentHistory({ dateRange: 'all', marketer, search: '', page: 1, pageSize: 20 }),
       Api.getDeclarations({ status: '', marketer, search: '', page: 1, pageSize: 20 })
     ]);
-    const entries = [];
+     const entries = [];
     if (payRes.ok) {
       payRes.result.rows.forEach(r => entries.push({
         schoolName: r.schoolName, schoolId: r.schoolId, marketer: r.marketer,
-        amount: r.amountAdded, time: r.date, status: 'Payment', reversed: r.reversed
+        amount: r.amountAdded, time: r.date, status: 'Payment', reversed: r.reversed, rowIndex: r.rowIndex
       }));
     }
     if (declRes.ok) {
       declRes.result.rows.forEach(r => entries.push({
         schoolName: r.schoolName, schoolId: r.schoolId, marketer: r.marketer,
-        amount: r.amount, time: r.date, status: r.status, reversed: r.reversed
+        amount: r.amount, time: r.date, status: r.status, reversed: r.reversed, rowIndex: r.rowIndex
       }));
     }
-    entries.sort((a, b) => new Date(b.time) - new Date(a.time));
+    entries.sort((a, b) => {
+      const d = new Date(b.time) - new Date(a.time);
+      return d !== 0 ? d : (b.rowIndex || 0) - (a.rowIndex || 0);
+    });
     return { ok: true, entries: entries.slice(0, 20) };
   }, (res) => {
     if (RecentState.marketer !== marketer) return; 
