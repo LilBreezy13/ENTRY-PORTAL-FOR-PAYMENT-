@@ -355,6 +355,24 @@ table.data tbody tr:hover {
   backdrop-filter: blur(2px);
 }
 
+
+@keyframes flashGreenRow {
+  0%   { background: color-mix(in srgb, var(--success) 55%, transparent); }
+  100% { background: color-mix(in srgb, var(--success) 12%, transparent); }
+}
+.row-flash-green {
+  animation: flashGreenRow 1.6s ease-out 3;
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+@keyframes pulseBadge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.pulse-badge {
+  animation: pulseBadge 1.2s ease-in-out infinite;
+}
+
 .kpi-icon {
   width: 40px;
   height: 40px;
