@@ -284,9 +284,12 @@ const kpis = [
     <div class="flex items-center justify-between mb-5 fade-in">
       <div>
         <h1 class="font-display text-xl font-semibold">Dashboard</h1>
-        <p class="text-sm text-[var(--text-muted)] flex items-center gap-2 mt-0.5"><span class="pulse-dot"></span>${fromCache ? 'Showing last known numbers · updating…' : 'Live from your Google Sheet'}</p>
+        <p class="text-sm text-[var(--text-muted)] flex items-center gap-2 mt-0.5"><span class="pulse-dot"></span>${fromCache ? 'Showing last known entries · updating…' : 'Live from your Marketers Ledger'}</p>
       </div>
-      <button id="refreshHome" class="btn btn-ghost btn-sm">↻ Refresh</button>
+         <div class="flex items-center gap-2">
+        <button id="viewLedgerToday" class="btn btn-ghost btn-sm"> Today's Ledger</button>
+        <button id="refreshHome" class="btn btn-ghost btn-sm">↻ Refresh</button>
+      </div>
     </div>
     <div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
     ${kpis.map(k => `
@@ -338,6 +341,59 @@ const kpis = [
     </div>
   `;
   document.getElementById('refreshHome').addEventListener('click', () => renderHome(container));
+  document.getElementById('viewLedgerToday').addEventListener('click', openLedgerTodayModal);
+}
+
+
+function openLedgerTodayModal() {
+  PortalCache.fetchWithCache('ledger_today', () => Api.getLedgerToday(), (res, fromCache) => {
+    if (!res.ok) {
+      if (!fromCache) toast('Could not load today\'s ledger.', 'error');
+      return;
+    }
+    renderLedgerTodayModal(res, fromCache);
+  });
+}
+
+function renderLedgerTodayModal(res, fromCache) {
+  const wrap = document.getElementById('modalHost') || document.createElement('div');
+  wrap.id = 'modalHost';
+  wrap.className = 'fixed inset-0 z-[90] modal-backdrop flex items-center justify-center p-4';
+  wrap.innerHTML = `
+       <div class="card w-[95vw] max-w-6xl p-6 max-h-[90vh] flex flex-col">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="font-display font-semibold">Today's Ledger</h2>
+        <button id="closeLedgerToday" class="btn btn-ghost btn-sm">✕</button>
+      </div>
+      <p class="text-xs text-[var(--text-muted)] mb-4">
+        ${fromCache ? 'Showing last known numbers · updating…' : 'Live'} ·
+        <span style="color:var(--success)" class="font-semibold">${res.entered} entered</span> ·
+        <span style="color:var(--warn)" class="font-semibold">${res.pending} not yet entered</span> ·
+        ${res.total} total today
+      </p>
+      <div class="table-wrap overflow-auto flex-1">
+        <table class="data">
+          <thead><tr><th>Time</th><th>Marketer</th><th>School</th><th>Sender</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody>
+            ${res.entries.length === 0 ? `<tr><td colspan="6" class="text-sm text-[var(--text-muted)] py-4">No ledger entries logged today yet.</td></tr>` : ''}
+            ${res.entries.map(e => `
+                           <tr style="${e.entered ? 'background:color-mix(in srgb, var(--success) 12%, transparent);' : ''}">
+                <td class="text-xs">${e.dateLabel || ''}${e.loggedTimeLabel ? `<br><span class="text-[var(--text-muted)]">${e.loggedTimeLabel}</span>` : ''}</td>
+                <td class="font-medium">${escapeHtml(e.marketer)}</td>
+                <td>${escapeHtml(e.schoolNameOnly || e.school)}</td>
+                <td>${escapeHtml(e.sender)}</td>
+                <td class="tabular-nums">${fmt.money(e.amount)}</td>
+                <td>${e.entered
+                  ? `<span class="font-semibold" style="color:var(--success)">✓ Entered</span>`
+                  : `<span class="font-semibold" style="color:var(--warn)">Pending</span>`}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) closeModal(); });
+  if (!wrap.isConnected) document.body.appendChild(wrap);
+  document.getElementById('closeLedgerToday').addEventListener('click', closeModal);
 }
 
 function skeletonKPIs() {
