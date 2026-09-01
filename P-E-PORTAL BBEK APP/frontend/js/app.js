@@ -345,10 +345,12 @@ const kpis = [
 }
 
 
-const LedgerTodayState = { seenKeys: new Set(), initialized: false };
+const LedgerTodayState = { seenKeys: new Set(), initialized: false, open: false };
 
 function openLedgerTodayModal() {
+  LedgerTodayState.open = true;
   PortalCache.fetchWithCache('ledger_today', () => Api.getLedgerToday(), (res, fromCache) => {
+    if (!LedgerTodayState.open) return; // modal was closed / user navigated away before this resolved
     if (!res.ok) {
       if (!fromCache) toast('Could not load today\'s ledger.', 'error');
       return;
@@ -357,7 +359,12 @@ function openLedgerTodayModal() {
   });
 }
 
+function closeLedgerTodayModal() {
+  LedgerTodayState.open = false;
+  closeModal();
+}
 function renderLedgerTodayModal(res, fromCache) {
+  if (!LedgerTodayState.open) return;
   const firstEverLoad = !LedgerTodayState.initialized;
   const newKeys = [];
   res.entries.forEach(e => {
@@ -404,11 +411,10 @@ function renderLedgerTodayModal(res, fromCache) {
         </table>
       </div>
     </div>`;
-  wrap.addEventListener('click', (e) => { if (e.target === wrap) closeModal(); });
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) closeLedgerTodayModal(); });
   if (!wrap.isConnected) document.body.appendChild(wrap);
-  document.getElementById('closeLedgerToday').addEventListener('click', closeModal);
+  document.getElementById('closeLedgerToday').addEventListener('click', closeLedgerTodayModal);
 }
-
 
 function skeletonKPIs() {
   return `<div class="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
