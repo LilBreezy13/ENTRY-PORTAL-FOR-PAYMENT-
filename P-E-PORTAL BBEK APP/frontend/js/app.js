@@ -286,8 +286,8 @@ const kpis = [
         <h1 class="font-display text-xl font-semibold">Dashboard</h1>
         <p class="text-sm text-[var(--text-muted)] flex items-center gap-2 mt-0.5"><span class="pulse-dot"></span>${fromCache ? 'Showing last known entries · updating…' : 'Live from your Marketers Ledger'}</p>
       </div>
-         <div class="flex items-center gap-2">
-        <button id="viewLedgerToday" class="btn btn-ghost btn-sm"> Today's Ledger</button>
+             <div class="flex items-center gap-2">
+        <button id="viewLedgerToday" class="btn btn-sm" style="background:var(--success); color:#fff; border-color:var(--success);">Today's Ledger</button>
         <button id="refreshHome" class="btn btn-ghost btn-sm">↻ Refresh</button>
       </div>
     </div>
