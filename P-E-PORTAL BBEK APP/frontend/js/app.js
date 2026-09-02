@@ -395,7 +395,7 @@ function renderLedgerTodayModal(res, fromCache) {
         <table class="data">
           <thead><tr><th>Date</th><th>Marketer</th><th>School</th><th>Sender</th><th>Amount</th><th>Status</th></tr></thead>
           <tbody>
-            ${res.entries.length === 0 ? `<tr><td colspan="6" class="text-sm text-[var(--text-muted)] py-4">No ledger entries logged today yet.</td></tr>` : ''}
+            ${res.entries.length === 0 ? `<tr><td colspan="6" class="text-sm text-[var(--text-muted)] py-4">Nothing yet.</td></tr>` : ''}
             ${res.entries.map(e => `
               <tr class="${e._isNew ? 'row-flash-green' : ''}" style="${!e._isNew && e.entered ? 'background:color-mix(in srgb, var(--success) 12%, transparent);' : ''}">
                 <td class="text-xs">${e.dateLabel || ''}${e.loggedTimeLabel ? `<br><span class="text-[var(--text-muted)]">${e.loggedTimeLabel}</span>` : ''}</td>
