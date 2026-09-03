@@ -574,11 +574,13 @@ function renderPaymentFormHost() {
 }
 
 function paymentModeHtml() {
+  const matchedAmount = State.ledgerMatch ? Number(State.ledgerMatch.amount || 0) : '';
   return `
     <form id="paymentForm" class="space-y-3">
       <div>
         <label class="field-label">Amount (${window.PORTAL_CONFIG.CURRENCY})</label>
-        <input id="paymentAmount" type="number" min="0.01" step="0.01" class="input mt-1 text-lg font-semibold" placeholder="0.00" />
+        <input id="paymentAmount" type="number" min="0.01" step="0.01" class="input mt-1 text-lg font-semibold" placeholder="0.00" value="${matchedAmount === '' ? '' : matchedAmount}" />
+        ${State.ledgerMatch ? `<p class="text-xs text-[var(--text-muted)] mt-1">Auto-filled from ${State.ledgerMatch.manuallyMatched ? 'your manual match' : 'the ledger'} · you can still edit it.</p>` : ''}
       </div>
       <button type="submit" class="btn btn-primary w-full" ${Auth.can('enterPayment') ? '' : 'disabled'}>Add Payment</button>
       ${Auth.can('enterPayment') ? '' : '<p class="text-xs text-center text-[var(--danger)]">Your role cannot enter payments.</p>'}
@@ -751,7 +753,6 @@ async function loadMarketerLedger(marketer) {
   State.ledgerLoading = !cached;
   State.ledgerMatch = State.selectedSchool ? matchLedgerEntry(State.ledgerEntries, State.selectedSchool) : null;
   renderLedgerPanel();
-
   PortalCache.fetchWithCache(cacheKey, () => Api.getLedgerForMarketer(marketer), (res) => {
     if (State.selectedMarketer !== marketer) return; // switched marketer while this was in flight
     State.ledgerLoading = false;
@@ -759,6 +760,7 @@ async function loadMarketerLedger(marketer) {
     State.ledgerEntries = res.entries;
     State.ledgerMatch = State.selectedSchool ? matchLedgerEntry(State.ledgerEntries, State.selectedSchool) : null;
     renderLedgerPanel();
+    if (State.selectedSchool) renderPaymentFormHost();
   });
 }
 function renderLedgerPanel() {
@@ -785,12 +787,18 @@ function renderLedgerPanel() {
     rows.unshift(State.ledgerMatch);
   }
 
+  const showManualPrompt = State.selectedSchool && !State.ledgerMatch && State.ledgerEntries.length > 0;
+
   el.innerHTML = `
     <div class="card p-5">
       <div class="flex items-center justify-between mb-3">
         <h2 class="font-display font-semibold">${escapeHtml(State.selectedMarketer)}'s Ledger</h2>
         <span class="badge">${State.ledgerEntries.length} pending</span>
       </div>
+      ${showManualPrompt ? `
+        <div class="surface-2 rounded-xl p-3 mb-3" style="border:1px dashed var(--border)">
+          <p class="text-xs text-[var(--text-muted)]">No ledger entry auto-matched <strong>${escapeHtml(State.selectedSchool.name)}</strong>. If one below is really the same school (slight name difference), click <strong>Match this school</strong> on it.</p>
+        </div>` : ''}
       <input id="ledgerSearch" class="input mb-3" placeholder="Search school or sender…" value="${escapeHtml(State.ledgerQuery)}" />
       ${rows.length === 0 ? emptyState(
         State.ledgerEntries.length === 0 ? 'Nothing pending' : 'No matches',
@@ -799,11 +807,15 @@ function renderLedgerPanel() {
       <div class="space-y-2 max-h-[560px] overflow-y-auto scrollbar-thin pr-1">
         ${rows.map(e => {
           const isMatch = State.ledgerMatch && e.rowRef === State.ledgerMatch.rowRef;
+          const canOfferManualMatch = !!(State.selectedSchool && !isMatch);
           return `
           <div class="surface-2 rounded-xl p-3${isMatch ? ' ledger-match' : ''}" data-ledger-row="${e.rowRef}">
             <div class="flex items-center justify-between gap-2">
               <p class="font-medium text-sm truncate">${escapeHtml(e.schoolNameOnly || e.school)}</p>
-              ${isMatch ? '<span class="badge badge-success">Matches selected school</span>' : (e.status ? `<span class="badge badge-warn">${escapeHtml(e.status)}</span>` : '')}
+              <div class="flex items-center gap-1 shrink-0">
+                ${isMatch ? `<span class="badge badge-success">${e.manuallyMatched ? 'Matched (manual)' : 'Matches selected school'}</span>` : ''}
+                ${e.isOldExam ? `<span class="badge badge-warn">Old exam · ${escapeHtml(e.oldExamDateLabel)}</span>` : (!isMatch && e.status ? `<span class="badge badge-warn">${escapeHtml(e.status)}</span>` : '')}
+              </div>
             </div>
             <p class="text-xs text-[var(--text-muted)] mt-0.5">${escapeHtml(e.sender || '—')}${e.schoolId ? ' · ' + escapeHtml(e.schoolId) : ''}</p>
                      <div class="flex items-center justify-between mt-1.5">
@@ -813,6 +825,7 @@ function renderLedgerPanel() {
               </div>
               <span class="font-semibold text-sm tabular-nums">${fmt.money(e.amount)}</span>
             </div>
+            ${canOfferManualMatch ? `<button class="btn btn-ghost btn-sm w-full mt-2" data-manual-match="${e.rowRef}">Match this school</button>` : ''}
           </div>`;
         }).join('')}
       </div>`}
@@ -831,8 +844,50 @@ function renderLedgerPanel() {
       }
     });
   }
+
+  el.querySelectorAll('[data-manual-match]').forEach(btn =>
+    btn.addEventListener('click', () => confirmManualMatch(Number(btn.dataset.manualMatch))));
 }
 
+function confirmManualMatch(rowRef) {
+  const s = State.selectedSchool;
+  const entry = State.ledgerEntries.find(e => e.rowRef === rowRef);
+  if (!s || !entry) return;
+  openModal(`
+    <h3 class="font-display font-semibold text-lg mb-4">Confirm match</h3>
+    <div class="space-y-2 text-sm mb-5">
+      <div class="flex justify-between"><span class="text-[var(--text-muted)]">Selected school</span><span class="font-medium">${escapeHtml(s.name)}</span></div>
+      <div class="flex justify-between"><span class="text-[var(--text-muted)]">Ledger entry</span><span class="font-medium">${escapeHtml(entry.schoolNameOnly || entry.school)}</span></div>
+      <div class="flex justify-between"><span class="text-[var(--text-muted)]">Amount</span><span class="font-semibold tabular-nums">${fmt.money(entry.amount)}</span></div>
+    </div>
+    <p class="text-xs text-[var(--text-muted)] mb-4">Confirm only if this ledger entry really belongs to <strong>${escapeHtml(s.name)}</strong>, just logged under a slightly different name.</p>
+    <div class="flex gap-2">
+      <button id="cancelMatch" class="btn btn-ghost flex-1">Cancel</button>
+      <button id="confirmMatch" class="btn btn-primary flex-1">Yes, same school</button>
+    </div>
+  `);
+  document.getElementById('cancelMatch').addEventListener('click', closeModal);
+  document.getElementById('confirmMatch').addEventListener('click', async () => {
+    const btn = document.getElementById('confirmMatch');
+    btn.disabled = true; btn.textContent = 'Matching…';
+    try {
+      const res = await Api.manualMatchLedgerEntry({ marketer: State.selectedMarketer, rowRef, schoolId: s.schoolId });
+      if (!res.ok) { toast(res.error || 'Could not save match.', 'error'); btn.disabled = false; btn.textContent = 'Yes, same school'; return; }
+      entry.schoolId = s.schoolId;
+      entry.matchedSchoolId = s.schoolId;
+      entry.manuallyMatched = true;
+      State.ledgerMatch = entry;
+      PortalCache.write('ledger:' + State.selectedMarketer, { ok: true, entries: State.ledgerEntries });
+      closeModal();
+      toast('School matched — amount auto-filled below.', 'success');
+      renderLedgerPanel();
+      renderPaymentFormHost();
+    } catch (ex) {
+      toast('Network error.', 'error');
+      btn.disabled = false; btn.textContent = 'Yes, same school';
+    }
+  });
+}
 /* ---------------------------------------------------------------
  * RECENT PAYMENTS (standalone tab) — last 20 payments + declarations,
  * filterable by marketer.
