@@ -16,7 +16,8 @@ const State = {
   ledgerEntries: [],     
   ledgerLoading: false,
   ledgerQuery: '',        
-  ledgerMatch: null        
+  ledgerMatch: null,
+  manualMatches: {}   
 };
 
 const fmt = {
@@ -488,11 +489,12 @@ function renderEntryLeft() {
     disabled: State.marketers.length === 0,
     items: State.marketers.map(m => ({ id: m.name, label: m.name, sub: `${m.schools} schools · Bal ${fmt.money(m.balance)}` })),
     selected: State.selectedMarketer,
-    onSelect: (item) => {
+       onSelect: (item) => {
       State.selectedMarketer = item.id;
       State.selectedSchool = null;
       State.ledgerMatch = null;
       State.ledgerQuery = '';
+      State.manualMatches = {};
 
      
       const cacheKey = 'schools:' + item.id;
@@ -523,7 +525,8 @@ function renderEntryLeft() {
     disabled: !State.selectedMarketer,
     items: State.schools.map(s => ({ id: s.schoolId, label: s.name, sub: `${s.schoolId} · ${s.location} · Bal ${fmt.money(s.balance)}`, raw: s })),
     selected: State.selectedSchool,
-    onSelect: (item) => {
+      onSelect: (item) => {
+      State.manualMatches = {}; 
       State.selectedSchool = item.raw;
       State.ledgerMatch = matchLedgerEntry(State.ledgerEntries, item.raw);
       renderPaymentFormHost();
@@ -580,7 +583,7 @@ function paymentModeHtml() {
       <div>
         <label class="field-label">Amount (${window.PORTAL_CONFIG.CURRENCY})</label>
         <input id="paymentAmount" type="number" min="0.01" step="0.01" class="input mt-1 text-lg font-semibold" placeholder="0.00" value="${matchedAmount === '' ? '' : matchedAmount}" />
-        ${State.ledgerMatch ? `<p class="text-xs text-[var(--text-muted)] mt-1">Auto-filled from ${State.ledgerMatch.manuallyMatched ? 'your manual match' : 'the ledger'} · you can still edit it.</p>` : ''}
+             ${State.ledgerMatch ? `<p class="text-xs text-[var(--text-muted)] mt-1">Auto-filled from ${State.manualMatches[State.ledgerMatch.rowRef] ? 'your manual match' : 'the ledger'} · you can still edit it.</p>` : ''}
       </div>
       <button type="submit" class="btn btn-primary w-full" ${Auth.can('enterPayment') ? '' : 'disabled'}>Add Payment</button>
       ${Auth.can('enterPayment') ? '' : '<p class="text-xs text-center text-[var(--danger)]">Your role cannot enter payments.</p>'}
@@ -662,9 +665,10 @@ function confirmPayment(amount) {
       State.last20 = State.last20.slice(0, 20);
 
       
-         if (res.transaction.ledgerRowRef) {
+             if (res.transaction.ledgerRowRef) {
         State.ledgerEntries = State.ledgerEntries.filter(e => e.rowRef !== res.transaction.ledgerRowRef);
         PortalCache.write('ledger:' + State.selectedMarketer, { ok: true, entries: State.ledgerEntries });
+        delete State.manualMatches[res.transaction.ledgerRowRef];
       }
       State.ledgerMatch = null;
 
@@ -734,6 +738,16 @@ function confirmDeclaration(status, amount, reason) {
 function matchLedgerEntry(entries, school) {
   if (!school || !entries || !entries.length) return null;
   const wantId = String(school.schoolId || '').trim();
+
+  
+  if (wantId) {
+    const manualRowRef = Object.keys(State.manualMatches).find(r => State.manualMatches[r] === wantId);
+    if (manualRowRef) {
+      const manual = entries.find(e => String(e.rowRef) === String(manualRowRef));
+      if (manual) return manual;
+    }
+  }
+
   if (wantId) {
     const byId = entries.find(e => e.schoolId && e.schoolId === wantId);
     if (byId) return byId;
@@ -813,7 +827,7 @@ function renderLedgerPanel() {
             <div class="flex items-center justify-between gap-2">
               <p class="font-medium text-sm truncate">${escapeHtml(e.schoolNameOnly || e.school)}</p>
               <div class="flex items-center gap-1 shrink-0">
-                ${isMatch ? `<span class="badge badge-success">${e.manuallyMatched ? 'Matched (manual)' : 'Matches selected school'}</span>` : ''}
+                            ${isMatch ? `<span class="badge badge-success">${State.manualMatches[e.rowRef] ? 'Matched (manual)' : 'Matches selected school'}</span>` : ''}
                 ${e.isOldExam ? `<span class="badge badge-warn">Old exam · ${escapeHtml(e.oldExamDateLabel)}</span>` : (!isMatch && e.status ? `<span class="badge badge-warn">${escapeHtml(e.status)}</span>` : '')}
               </div>
             </div>
@@ -867,25 +881,18 @@ function confirmManualMatch(rowRef) {
     </div>
   `);
   document.getElementById('cancelMatch').addEventListener('click', closeModal);
-  document.getElementById('confirmMatch').addEventListener('click', async () => {
-    const btn = document.getElementById('confirmMatch');
-    btn.disabled = true; btn.textContent = 'Matching…';
-    try {
-      const res = await Api.manualMatchLedgerEntry({ marketer: State.selectedMarketer, rowRef, schoolId: s.schoolId });
-      if (!res.ok) { toast(res.error || 'Could not save match.', 'error'); btn.disabled = false; btn.textContent = 'Yes, same school'; return; }
-      entry.schoolId = s.schoolId;
-      entry.matchedSchoolId = s.schoolId;
-      entry.manuallyMatched = true;
-      State.ledgerMatch = entry;
-      PortalCache.write('ledger:' + State.selectedMarketer, { ok: true, entries: State.ledgerEntries });
-      closeModal();
-      toast('School matched — amount auto-filled below.', 'success');
-      renderLedgerPanel();
-      renderPaymentFormHost();
-    } catch (ex) {
-      toast('Network error.', 'error');
-      btn.disabled = false; btn.textContent = 'Yes, same school';
-    }
+  document.getElementById('confirmMatch').addEventListener('click', () => {
+    // Session-only: stored in State.manualMatches (not on the entry itself,
+    // not on the sheet), so it's automatically forgotten the next time this
+    // marketer/school is (re)selected.
+    State.manualMatches[rowRef] = s.schoolId;
+    State.ledgerMatch = entry;
+    closeModal();
+    toast('School matched — amount auto-filled below.', 'success');
+    renderLedgerPanel();
+    renderPaymentFormHost();
+
+    Api.manualMatchLedgerEntry({ marketer: State.selectedMarketer, rowRef, schoolId: s.schoolId }).catch(() => {});
   });
 }
 /* ---------------------------------------------------------------
