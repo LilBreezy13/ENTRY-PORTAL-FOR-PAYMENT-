@@ -839,7 +839,8 @@ function renderLedgerPanel() {
               </div>
               <span class="font-semibold text-sm tabular-nums">${fmt.money(e.amount)}</span>
             </div>
-            ${canOfferManualMatch ? `<button class="btn btn-ghost btn-sm w-full mt-2" data-manual-match="${e.rowRef}">Match this school</button>` : ''}
+                     ${canOfferManualMatch ? `<button class="btn btn-ghost btn-sm w-full mt-2" data-manual-match="${e.rowRef}">Match this school</button>` : ''}
+            <button class="btn btn-ghost btn-sm w-full mt-1" style="color:var(--text-muted)" data-resolve="${e.rowRef}">${e.isOldExam ? 'Mark as Resolved (old exam)' : 'Mark as Resolved'}</button>
           </div>`;
         }).join('')}
       </div>`}
@@ -861,6 +862,9 @@ function renderLedgerPanel() {
 
   el.querySelectorAll('[data-manual-match]').forEach(btn =>
     btn.addEventListener('click', () => confirmManualMatch(Number(btn.dataset.manualMatch))));
+
+  el.querySelectorAll('[data-resolve]').forEach(btn =>
+    btn.addEventListener('click', () => confirmResolveEntry(Number(btn.dataset.resolve))));
 }
 
 function confirmManualMatch(rowRef) {
@@ -893,6 +897,53 @@ function confirmManualMatch(rowRef) {
     renderPaymentFormHost();
 
     Api.manualMatchLedgerEntry({ marketer: State.selectedMarketer, rowRef, schoolId: s.schoolId }).catch(() => {});
+  });
+}
+
+function confirmResolveEntry(rowRef) {
+  const entry = State.ledgerEntries.find(e => e.rowRef === rowRef);
+  if (!entry) return;
+  openModal(`
+    <h3 class="font-display font-semibold text-lg mb-4">Mark as resolved?</h3>
+    <div class="space-y-2 text-sm mb-5">
+      <div class="flex justify-between"><span class="text-[var(--text-muted)]">School / Sender</span><span class="font-medium">${escapeHtml(entry.schoolNameOnly || entry.school)}</span></div>
+      <div class="flex justify-between"><span class="text-[var(--text-muted)]">Amount</span><span class="font-semibold tabular-nums">${fmt.money(entry.amount)}</span></div>
+      ${entry.isOldExam ? `<div class="flex justify-between"><span class="text-[var(--text-muted)]">Reason</span><span class="font-medium">Old exam · ${escapeHtml(entry.oldExamDateLabel)}</span></div>` : ''}
+    </div>
+    <p class="text-xs text-[var(--text-muted)] mb-4">This only hides it from this ledger view — the row stays exactly as-is on the worksheet, and is <strong>not</strong> marked as an entered payment (no green highlight).</p>
+    <div class="flex gap-2">
+      <button id="cancelResolve" class="btn btn-ghost flex-1">Cancel</button>
+      <button id="confirmResolve" class="btn btn-primary flex-1">Mark Resolved</button>
+    </div>
+  `);
+  document.getElementById('cancelResolve').addEventListener('click', closeModal);
+  document.getElementById('confirmResolve').addEventListener('click', () => {
+    State.ledgerEntries = State.ledgerEntries.filter(e => e.rowRef !== rowRef);
+    if (State.ledgerMatch && State.ledgerMatch.rowRef === rowRef) State.ledgerMatch = null;
+    delete State.manualMatches[rowRef];
+    PortalCache.write('ledger:' + State.selectedMarketer, { ok: true, entries: State.ledgerEntries });
+    closeModal();
+    toast('Marked resolved — it will no longer show in this ledger.', 'success');
+    renderLedgerPanel();
+    renderPaymentFormHost();
+
+    Api.resolveLedgerEntry({ marketer: State.selectedMarketer, rowRef })
+      .then((res) => {
+        if (!res.ok) {
+          State.ledgerEntries.push(entry);
+          PortalCache.write('ledger:' + State.selectedMarketer, { ok: true, entries: State.ledgerEntries });
+          toast(res.error || 'Could not resolve — restored.', 'error');
+          renderLedgerPanel();
+          renderPaymentFormHost();
+        }
+      })
+      .catch(() => {
+        State.ledgerEntries.push(entry);
+        PortalCache.write('ledger:' + State.selectedMarketer, { ok: true, entries: State.ledgerEntries });
+        toast('Network error — entry restored.', 'error');
+        renderLedgerPanel();
+        renderPaymentFormHost();
+      });
   });
 }
 /* ---------------------------------------------------------------
