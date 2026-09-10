@@ -628,9 +628,14 @@ function wirePaymentMode() {
     confirmPayment(amount);
   });
 }
-
 function confirmPayment(amount) {
   const s = State.selectedSchool;
+  // Generated ONCE per payment attempt. If the network drops and the agent
+  // has to tap Confirm again, we resend this SAME key — the backend's
+  // duplicate guard then correctly recognizes a retry instead of billing
+  // the school twice.
+  const idempotencyKey = 'pay_' + s.schoolId + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+
   openModal(`
     <h3 class="font-display font-semibold text-lg mb-4">Confirm Payment</h3>
     <div class="space-y-2 text-sm mb-5">
@@ -645,7 +650,8 @@ function confirmPayment(amount) {
     </div>
   `);
   document.getElementById('cancelPay').addEventListener('click', closeModal);
-  document.getElementById('confirmPay').addEventListener('click', async () => {
+
+  async function submitPayment() {
     const btn = document.getElementById('confirmPay');
     btn.disabled = true; btn.textContent = 'Submitting…';
     try {
@@ -653,10 +659,27 @@ function confirmPayment(amount) {
         marketer: State.selectedMarketer,
         schoolId: s.schoolId,
         amount,
-        idempotencyKey: 'pay_' + s.schoolId + '_' + Date.now(),
+        idempotencyKey,
         ledgerRowRef: State.ledgerMatch ? State.ledgerMatch.rowRef : undefined
       });
-      if (!res.ok) { toast(res.error || 'Payment failed.', 'error'); btn.disabled = false; btn.textContent = 'Confirm Payment'; return; }
+
+      if (!res.ok) {
+        if (res.duplicate) {
+          // The backend confirms this exact payment already went through on
+          // an earlier attempt — nothing to resubmit, just sync and close.
+          toast('That payment already went through — syncing your view.', 'success');
+          closeModal();
+          State.ledgerMatch = null;
+          renderPaymentFormHost();
+          renderLedgerPanel();
+          refreshDashboardCache();
+          return;
+        }
+        toast(res.error || 'Payment failed.', 'error');
+        btn.disabled = false; btn.textContent = 'Confirm Payment';
+        return;
+      }
+
       closeModal();
       toast(`Payment recorded · ${res.transaction.transactionId} · Google Sheet synchronized.`, 'success');
       s.collected = res.transaction.newCollected;
@@ -664,8 +687,7 @@ function confirmPayment(amount) {
       State.last20.unshift({ schoolName: s.name, schoolId: s.schoolId, marketer: State.selectedMarketer, amount, time: new Date(), status: 'Payment' });
       State.last20 = State.last20.slice(0, 20);
 
-      
-             if (res.transaction.ledgerRowRef) {
+      if (res.transaction.ledgerRowRef) {
         State.ledgerEntries = State.ledgerEntries.filter(e => e.rowRef !== res.transaction.ledgerRowRef);
         PortalCache.write('ledger:' + State.selectedMarketer, { ok: true, entries: State.ledgerEntries });
         delete State.manualMatches[res.transaction.ledgerRowRef];
@@ -676,10 +698,15 @@ function confirmPayment(amount) {
       renderLedgerPanel();
       refreshDashboardCache();
     } catch (ex) {
-      toast('Network error while submitting payment.', 'error');
+      // Network dropped — we genuinely don't know if the server got it. Keep
+      // the button re-enabled with the SAME idempotencyKey still in scope, so
+      // tapping Confirm again is a safe retry, not a second payment.
+      toast('Network hiccup — tap Confirm Payment again, it\'s safe to retry.', 'error');
       btn.disabled = false; btn.textContent = 'Confirm Payment';
     }
-  });
+  }
+
+  document.getElementById('confirmPay').addEventListener('click', submitPayment);
 }
 
 function wireStatusMode() {
