@@ -654,25 +654,35 @@ function confirmPayment(amount) {
   async function submitPayment() {
     const btn = document.getElementById('confirmPay');
     btn.disabled = true; btn.textContent = 'Submitting…';
+
+    const ledgerRowRef = State.ledgerMatch ? State.ledgerMatch.rowRef : undefined;
+
+    function dropLedgerEntryLocally(rowRef) {
+      if (!rowRef) return;
+      State.ledgerEntries = State.ledgerEntries.filter(e => e.rowRef !== rowRef);
+      PortalCache.write('ledger:' + State.selectedMarketer, { ok: true, entries: State.ledgerEntries });
+      delete State.manualMatches[rowRef];
+    }
+
     try {
       const res = await Api.addPayment({
         marketer: State.selectedMarketer,
         schoolId: s.schoolId,
         amount,
         idempotencyKey,
-        ledgerRowRef: State.ledgerMatch ? State.ledgerMatch.rowRef : undefined
+        ledgerRowRef
       });
 
       if (!res.ok) {
         if (res.duplicate) {
-          // The backend confirms this exact payment already went through on
-          // an earlier attempt — nothing to resubmit, just sync and close.
           toast('That payment already went through — syncing your view.', 'success');
           closeModal();
+          dropLedgerEntryLocally(ledgerRowRef);
           State.ledgerMatch = null;
           renderPaymentFormHost();
           renderLedgerPanel();
           refreshDashboardCache();
+          loadMarketerLedger(State.selectedMarketer);
           return;
         }
         toast(res.error || 'Payment failed.', 'error');
@@ -688,9 +698,7 @@ function confirmPayment(amount) {
       State.last20 = State.last20.slice(0, 20);
 
       if (res.transaction.ledgerRowRef) {
-        State.ledgerEntries = State.ledgerEntries.filter(e => e.rowRef !== res.transaction.ledgerRowRef);
-        PortalCache.write('ledger:' + State.selectedMarketer, { ok: true, entries: State.ledgerEntries });
-        delete State.manualMatches[res.transaction.ledgerRowRef];
+        dropLedgerEntryLocally(res.transaction.ledgerRowRef);
       }
       State.ledgerMatch = null;
 
@@ -698,14 +706,10 @@ function confirmPayment(amount) {
       renderLedgerPanel();
       refreshDashboardCache();
     } catch (ex) {
-      // Network dropped — we genuinely don't know if the server got it. Keep
-      // the button re-enabled with the SAME idempotencyKey still in scope, so
-      // tapping Confirm again is a safe retry, not a second payment.
       toast('Network hiccup — tap Confirm Payment again, it\'s safe to retry.', 'error');
       btn.disabled = false; btn.textContent = 'Confirm Payment';
     }
   }
-
   document.getElementById('confirmPay').addEventListener('click', submitPayment);
 }
 
