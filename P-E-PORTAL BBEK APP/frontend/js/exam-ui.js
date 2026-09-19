@@ -297,10 +297,10 @@ function openNewExamModal() {
       <div>
         <label class="field-label">Portal spreadsheet ID</label>
         <input id="nePortalSheetId" class="input mt-1" placeholder="the ID from that exam's own Portal sheet URL" />
-        <p class="text-xs text-[var(--text-muted)] mt-1">The spreadsheet with this exam's PAYMENT ENTRY, SETTING and marketer tabs — schools are looked up here.</p>
+        <p class="text-xs text-[var(--text-muted)] mt-1">After deploying the worksheet appscript of the particular exam you want to link, get the WEB URL and the worksheet ID and paste in their right fields.</p>
       </div>
       <div>
-        <label class="field-label">Ledger spreadsheet ID <span class="text-[var(--text-muted)]">(optional — leave blank, you use one shared Ledger)</span></label>
+        <label class="field-label">Ledger spreadsheet ID <span class="text-[var(--text-muted)]">(optional but best you add it)</span></label>
         <input id="neLedgerId" class="input mt-1" />
       </div>
     </div>
