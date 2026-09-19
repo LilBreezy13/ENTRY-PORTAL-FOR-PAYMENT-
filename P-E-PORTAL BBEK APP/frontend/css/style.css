@@ -247,6 +247,7 @@ table.data tbody tr {
   color: rgba(234, 250, 247, 0.7);
   transition: all 0.15s ease;
   cursor: pointer;
+  white-space: nowrap;
 }
 .nav-tab:hover {
   color: #fff;

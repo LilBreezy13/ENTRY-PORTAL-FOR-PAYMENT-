@@ -118,22 +118,22 @@ function renderShell(loginMessage) {
     <div class="min-h-screen flex flex-col">
       <header class="topbar sticky top-0 z-30 shadow-md">
         <div class="max-w-[1400px] mx-auto px-4 sm:px-6">
-          <div class="flex items-center justify-between h-16 gap-4">
+                      <div class="flex flex-wrap items-center gap-3 py-3">
             <div class="flex items-center gap-3 shrink-0">
-              <div class="w-9 h-9 rounded-lg flex items-center justify-center font-display font-bold" style="background:var(--amber-500)">₵</div>
+              <div class="w-9 h-9 rounded-lg flex items-center justify-center font-display font-bold shrink-0" style="background:var(--amber-500)">₵</div>
               <div class="hidden sm:block">
                 <p class="font-display font-semibold leading-tight">${window.PORTAL_CONFIG.APP_NAME}</p>
                 <p class="text-[11px] text-white/60 leading-tight">Best Brain Examinations Konsortium Ltd</p>
               </div>
             </div>
-            <nav class="hidden md:flex items-center gap-1 overflow-x-auto">
+                      <nav class="flex flex-wrap items-center gap-1 ml-4 sm:ml-8">
               ${tabs.map(t => `<div class="nav-tab ${State.tab === t.id ? 'active' : ''}" data-tab="${t.id}">${t.label}</div>`).join('')}
             </nav>
-            <div class="flex items-center gap-2 shrink-0">
-              <button id="themeToggle" class="btn btn-ghost !text-white !border-white/20 btn-sm" title="Toggle theme"><span id="themeIcon">🌙</span></button>
+            <div class="flex items-center gap-2 shrink-0 ml-auto">
+              ${examSwitcherHtml()}
               <div class="relative">
                 <button id="profileBtn" class="flex items-center gap-2 pl-1 pr-2 py-1 rounded-full hover:bg-white/10 transition">
-                  <span class="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm" style="background:var(--amber-500);color:#fff">${initials(user.name)}</span>
+                  <span class="w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm shrink-0" style="background:var(--amber-500);color:#fff">${initials(user.name)}</span>
                   <span class="hidden lg:flex flex-col items-start leading-tight">
                     <span class="text-sm font-medium">${escapeHtml(user.name)}</span>
                     <span class="text-[11px] text-white/60 capitalize">${escapeHtml(user.role)}</span>
@@ -144,14 +144,15 @@ function renderShell(loginMessage) {
                     <p class="text-sm font-medium">${escapeHtml(user.name)}</p>
                     <p class="text-xs text-[var(--text-muted)]">@${escapeHtml(user.username)} · ${escapeHtml(user.role)}</p>
                   </div>
+                  <button id="themeToggle" class="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-[var(--surface-2)] text-sm mt-1">
+                    <span>Theme</span>
+                    <span id="themeIcon">🌙</span>
+                  </button>
                   <button id="logoutBtn" class="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--surface-2)] text-sm mt-1 text-[var(--danger)]">Log out</button>
                 </div>
               </div>
             </div>
           </div>
-          <nav class="flex md:hidden items-center gap-1 pb-2 overflow-x-auto scrollbar-thin">
-            ${tabs.map(t => `<div class="nav-tab shrink-0 ${State.tab === t.id ? 'active' : ''}" data-tab="${t.id}">${t.label}</div>`).join('')}
-          </nav>
         </div>
       </header>
       <main class="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6" id="tabContent"></main>
@@ -165,6 +166,8 @@ function renderShell(loginMessage) {
     document.getElementById('profileMenu').classList.toggle('hidden');
   });
   document.getElementById('logoutBtn').addEventListener('click', () => Auth.logout());
+  const examBtn = document.getElementById('examSwitcherBtn');
+  if (examBtn) examBtn.addEventListener('click', () => openExamSwitcherModal());
   document.querySelectorAll('[data-tab]').forEach(el => {
     el.addEventListener('click', () => { State.tab = el.dataset.tab; renderShell(); });
   });
@@ -231,15 +234,20 @@ function renderLogin(message) {
     err.classList.add('hidden');
     btn.disabled = true; btn.textContent = 'Signing in…';
     try {
-      const res = await Auth.login(document.getElementById('username').value.trim(), document.getElementById('pin').value.trim());
+      const username = document.getElementById('username').value.trim();
+      const pin = document.getElementById('pin').value.trim();
+      const res = await Auth.login(username, pin);
       if (!res.ok) {
         err.textContent = res.error || 'Unable to sign in.';
         err.classList.remove('hidden');
         btn.disabled = false; btn.textContent = 'Sign In';
         return;
       }
-      State.tab = 'home';
-      renderShell();
+      // Kept in memory only (never persisted) so switching exams later in
+      // this same tab can silently re-authenticate if the same PIN works
+      // there too — falls back to a one-field PIN prompt otherwise.
+      rememberPendingCredentials(username, pin);
+      await afterLoginGoToExamGate();
     } catch (ex) {
       err.textContent = 'Could not reach the server. Check your connection and the API URL in config.js.';
       err.classList.remove('hidden');
@@ -1487,12 +1495,20 @@ function paintDeclTable(host, result) {
 async function renderAdmin(container) {
   container.innerHTML = `
     <h1 class="font-display text-lg font-semibold mb-5">Admin</h1>
+    <div class="card p-5 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-display font-semibold">Exams</h2>
+        <button id="newExamBtn" class="btn btn-primary btn-sm">+ New exam</button>
+      </div>
+      <div id="examsHost">${skeletonTable(3)}</div>
+    </div>
     <div class="grid lg:grid-cols-2 gap-6">
       <div class="card p-5">
         <div class="flex items-center justify-between mb-4">
           <h2 class="font-display font-semibold">Users</h2>
           <button id="newUserBtn" class="btn btn-primary btn-sm">+ New user</button>
         </div>
+        <p class="text-xs text-[var(--text-muted)] mb-2">Users are managed per-exam. This adds a user to the exam currently selected (<b>${escapeHtml((Exams.getCurrent() || {}).examName || '—')}</b>).</p>
         <div id="usersHost">${skeletonTable(4)}</div>
       </div>
       <div class="card p-5">
@@ -1502,8 +1518,10 @@ async function renderAdmin(container) {
     </div>
   `;
   document.getElementById('newUserBtn').addEventListener('click', openNewUserModal);
+  document.getElementById('newExamBtn').addEventListener('click', openNewExamModal);
   loadUsers();
   loadAudit();
+  loadExamAdmin();
 }
 
 async function loadUsers() {
@@ -1596,4 +1614,4 @@ document.addEventListener('click', (e) => {
   }
 });
 
-renderShell();
+boot();

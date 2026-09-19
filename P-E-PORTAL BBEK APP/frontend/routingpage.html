@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Select Exam · Payment Entry Portal</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config = { darkMode: 'class', theme: { extend: {} } };</script>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="root"></div>
+
+<script src="js/config.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/cache.js"></script>
+<script src="js/exams.js"></script>
+<script src="js/api.js"></script>
+<script src="js/auth.js"></script>
+<script>
+/*
+ * This page is a thin, standalone wrapper around the exam picker used
+ * inside the main app (see frontend/js/exam-ui.js). It exists so users
+ * (or bookmarks/shortcuts) can jump straight to "choose/switch exam"
+ * without going through the full app shell first.
+ *
+ * All it does:
+ *  1. Load the exam list from the Directory.
+ *  2. Let the user pick one.
+ *  3. If already authenticated with that exam this session, or the
+ *     credentials just entered work for it too, store the session and
+ *     redirect into index.html.
+ *  4. Otherwise ask for that exam's username/PIN once, then redirect.
+ */
+const root = document.getElementById('root');
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function renderPicker() {
+  Theme.init();
+  root.innerHTML = `<div class="min-h-screen flex items-center justify-center px-4" style="background: radial-gradient(circle at 20% 20%, var(--teal-800), var(--teal-950));">
+    <p class="text-white/70 text-sm">Loading exams…</p>
+  </div>`;
+
+  const res = await Exams.loadExams();
+  const exams = Exams.getExams();
+  const current = Exams.getCurrent();
+
+  root.innerHTML = `
+    <div class="min-h-screen flex items-center justify-center px-4" style="background: radial-gradient(circle at 20% 20%, var(--teal-800), var(--teal-950));">
+      <div class="w-full max-w-md">
+        <div class="flex flex-col items-center mb-6 text-white">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center font-display font-bold text-xl mb-3" style="background:var(--amber-500)">📝</div>
+          <h1 class="font-display text-xl font-semibold">Select an exam</h1>
+          <p class="text-sm text-white/60 mt-1">${res.ok ? 'Choose which exam to work in.' : escapeHtml(res.error || 'Could not load the exam list.')}</p>
+        </div>
+        <div id="pinBox" class="hidden card p-4 mb-3">
+          <p class="text-sm font-medium mb-2" id="pinBoxTitle"></p>
+          <div class="space-y-2">
+            <input id="rpUsername" class="input" placeholder="Username" />
+            <input id="rpPin" type="password" class="input" placeholder="PIN" />
+          </div>
+          <div id="pinBoxError" class="hidden badge badge-danger w-full !justify-center py-2 mt-2"></div>
+          <button id="pinBoxSubmit" class="btn btn-primary w-full mt-3">Continue</button>
+        </div>
+        <div class="space-y-2">
+          ${exams.map(ex => `
+            <button class="w-full text-left card p-4 flex items-center justify-between gap-3" data-exam-code="${escapeHtml(ex.examCode)}" style="${current && current.examCode === ex.examCode ? 'border-color:var(--amber-500)' : ''}">
+              <div>
+                <p class="font-display font-semibold">${escapeHtml(ex.examName)}</p>
+                <p class="text-xs text-[var(--text-muted)] mt-0.5">${escapeHtml(ex.examCode)} · ${escapeHtml(ex.examMonth || '')} · ${escapeHtml(ex.examType || '')} · ${escapeHtml(ex.academicYear || '')}</p>
+              </div>
+              ${ex.isDefault ? '<span class="badge badge-warn">Default</span>' : ''}
+            </button>`).join('') || '<p class="text-white/60 text-sm text-center">No exams registered yet.</p>'}
+        </div>
+      </div>
+    </div>`;
+
+  document.querySelectorAll('[data-exam-code]').forEach(el => {
+    el.addEventListener('click', () => choose(exams.find(e => e.examCode === el.dataset.examCode)));
+  });
+}
+
+async function choose(exam) {
+  if (!exam) return;
+  if (Exams.hasSession(exam.examCode)) {
+    Exams.setCurrent(exam);
+    window.location.href = 'index.html';
+    return;
+  }
+  showPinBox(exam);
+}
+
+function showPinBox(exam) {
+  const box = document.getElementById('pinBox');
+  box.classList.remove('hidden');
+  document.getElementById('pinBoxTitle').textContent = 'Sign in to ' + exam.examName;
+  const submitBtn = document.getElementById('pinBoxSubmit');
+  const err = document.getElementById('pinBoxError');
+
+  submitBtn.onclick = async () => {
+    const username = document.getElementById('rpUsername').value.trim();
+    const pin = document.getElementById('rpPin').value.trim();
+    err.classList.add('hidden');
+
+    if (!username || !pin) {
+      err.textContent = 'Enter a username and PIN.';
+      err.classList.remove('hidden');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Signing in…';
+    try {
+      const res = await Auth.loginToExam(exam, username, pin);
+      if (!res.ok) {
+        err.textContent = res.error || 'Unable to sign in.';
+        err.classList.remove('hidden');
+        return;
+      }
+      Exams.setCurrent(exam);
+      window.location.href = 'index.html';
+      return; // navigating away — skip the finally re-enable below
+    } catch (e) {
+      console.error('Login request failed:', e);
+      err.textContent = 'Could not reach ' + exam.examName + '\u2019s server. Check that its API URL in the Exam Directory is correct and the Web App is deployed. (' + (e.message || 'network error') + ')';
+      err.classList.remove('hidden');
+    }
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Continue';
+  };
+}
+
+renderPicker();
+</script>
+</body>
+</html>
