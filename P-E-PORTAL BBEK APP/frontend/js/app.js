@@ -118,7 +118,7 @@ function renderShell(loginMessage) {
     <div class="min-h-screen flex flex-col">
       <header class="topbar sticky top-0 z-30 shadow-md">
         <div class="max-w-[1400px] mx-auto px-4 sm:px-6">
-                      <div class="flex flex-wrap items-center gap-3 py-3">
+                                     <div class="flex flex-wrap lg:flex-nowrap items-center gap-3 py-3">
             <div class="flex items-center gap-3 shrink-0">
               <div class="w-9 h-9 rounded-lg flex items-center justify-center font-display font-bold shrink-0" style="background:var(--amber-500)">₵</div>
               <div class="hidden sm:block">
@@ -126,8 +126,8 @@ function renderShell(loginMessage) {
                 <p class="text-[11px] text-white/60 leading-tight">Best Brain Examinations Konsortium Ltd</p>
               </div>
             </div>
-                      <nav class="flex flex-wrap items-center gap-1 ml-4 sm:ml-8">
-              ${tabs.map(t => `<div class="nav-tab ${State.tab === t.id ? 'active' : ''}" data-tab="${t.id}">${t.label}</div>`).join('')}
+                                 <nav class="flex flex-wrap lg:flex-nowrap items-center gap-1 ml-4 sm:ml-6 min-w-0">
+              ${tabs.map(t => `<div class="nav-tab whitespace-nowrap ${State.tab === t.id ? 'active' : ''}" data-tab="${t.id}">${t.label}</div>`).join('')}
             </nav>
             <div class="flex items-center gap-2 shrink-0 ml-auto">
               ${examSwitcherHtml()}

@@ -107,9 +107,9 @@ function examSwitcherHtml() {
   const exam = Exams.getCurrent();
   const label = exam ? exam.examName : 'Select exam';
   return `
-    <button id="examSwitcherBtn" class="btn btn-ghost !text-white !border-white/20 btn-sm flex items-center gap-1.5" title="Switch exam">
-      <span class="font-medium">${escapeHtml(label)}</span>
-      <span>▾</span>
+     <button id="examSwitcherBtn" class="btn btn-ghost !text-white !border-white/20 btn-sm flex items-center gap-1.5 max-w-[190px]" title="${escapeHtml(label)} — click to switch exam">
+      <span class="font-medium truncate">${escapeHtml(label)}</span>
+      <span class="shrink-0">▾</span>
     </button>`;
 }
 
